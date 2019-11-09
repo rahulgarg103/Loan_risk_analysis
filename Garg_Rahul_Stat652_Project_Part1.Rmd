@@ -1,0 +1,117 @@
+---
+title: "Stat.652 Lending Club Loan Project_Part1"
+author: "Rahul Garg"
+date: "March 15, 2019"
+output:
+  word_document: default
+  html_notebook: default
+---
+#Step1: Collecting the data 
+```{r}
+data1<-read.csv("LoanStats3b.csv/LoanStats3b.csv")
+data2<-read.csv("LoanStats3c.csv/LoanStats3c.csv")
+ln_data<-rbind(data1,data2)
+dim(ln_data)
+
+```
+
+#Step2: Exploring and Preparing the data.
+```{r}
+
+##Keeping the observations which are either fully paid or charged off in loan_status
+table(ln_data$loan_status)
+
+ln_data$y <- NA
+ln_data$y[ln_data$loan_status=="Fully Paid"]<-1
+ln_data$y[ln_data$loan_status=="Charged Off"]<-0
+ln_data$y <- factor(ln_data$y, levels=c(0,1),labels=c("Charged Off","Fully Paid"))
+ln_data <- ln_data[-which(is.na(ln_data$y)),]
+
+
+
+##Keeping the variables which have more than 1 unique value
+keep <- c()
+unique_vals <- sapply(ln_data, function(x) length(unique(x)))
+for(key in names(unique_vals)){
+value<-unique_vals[key]
+if(value > 1) {
+keep <- append(keep,key)
+}
+}
+ln_data <- ln_data[keep]
+
+##Cleaning Using sapply function and keeping the values which are filled more than 75%.
+imp<- c()
+complete<-sapply(ln_data,function(x) sum(!is.na(x))/length(x))
+for(key in names(complete)){
+  val<- complete[key]
+  if(val>=0.75){
+    imp<-append(imp,key)
+  }
+}
+ln_data<-ln_data[imp]
+
+dim(ln_data)
+
+head(ln_data)
+
+ln_data<-na.omit(ln_data)
+
+
+```
+
+
+```{r}
+#Removing the percentage signs and converting the variables into numeric values.
+ln_data$int_rate <- as.numeric(gsub("%", "", as.character(ln_data$int_rate)))/100
+ln_data$revol_util <- as.numeric(gsub("%", "", as.character(ln_data$revol_util)))/100
+
+#Removing the features which has no relevance according to the general observation.
+ln_data <- ln_data[ , -which(names(ln_data) %in% c("emp_title",
+"desc",
+"title",
+"earliest_cr_line",
+"zip_code",
+"last_pymnt_d",
+"last_credit_pull_d",
+"debt_settlement_flag_date",
+"settlement_date","loan_status","payment_plan_start_date","hardship_start_date","hardship_end_date","issue_d"))]
+
+dim(ln_data)
+
+
+
+```
+
+```{r}
+#Sampling the data because the data set is too big. 
+set.seed(999)
+sample_ln_data<-ln_data[sample(nrow(ln_data), 15000), ]
+
+# Using Random forest for feature selection.
+library(knitr)
+library(randomForest)
+library(dplyr)
+library(tibble)
+forest <- randomForest(y ~ ., data = sample_ln_data, ntree = 201, mtry = 3)
+rf_importance <- importance(forest) %>%
+as.data.frame() %>%
+rownames_to_column("feature") %>%
+arrange(desc(MeanDecreaseGini)) %>%
+column_to_rownames("feature")
+kable(rf_importance)
+rf_importance
+
+#Now we can select the features according to the data set. Here, I removed the variables which have less importance than other variables and I also removed two variables which had very high importance because they were highly correlated with the response variable. In addition removing the variables whichhave very high correlation among themselves.
+
+ln_data<-ln_data[,-which(names(ln_data)%in%c("recoveries","collection_recovery_fee","num_tl_120dpd_2m","num_tl_30dpd","delinq_amnt","acc_now_delinq","chargeoff_within_12_mths","collections_12_mths_ex_med","hardship_type","hardship_status","tax_liens","hardship_loan_status","hardship_reason","num_tl_90g_dpd_24m","pub_rec_bankruptcies","pub_rec","initial_list_status","delinq_2yrs","tot_coll_amt","home_ownership","num_accts_ever_120_pd","inq_last_6mths","grade","total_pymnt_inv","funded_amnt_inv","loan_amnt","total_rec_late_fee"))]
+
+
+dim(ln_data)
+```
+
+```{r}
+save(ln_data,file="ln_data.Rda")
+
+```
+

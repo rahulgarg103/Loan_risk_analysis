@@ -1,0 +1,86 @@
+---
+title: "Stat.652 Lending Club Loan Project_Part2"
+output:
+  word_document: default
+  html_notebook: default
+---
+#Loading the data.
+```{r}
+load("ln_data.Rda")
+dim(ln_data)
+```
+
+#Step3: Training a model on the data.
+##Using Logistic Regression
+```{r}
+#head(ln_data)
+#Using logistic regression regression on the sample data from the whole data set.
+
+#lor<-glm(y~.,family=binomial(link="logit"),data=sample_ln_data)
+#predict_lor<-predict(lor, newdata = sample_ln_data, type="response")
+#predict_lor<-ifelse(predict_lor>0.5,1,0)
+#missclasificerror1<-mean(predict_lor !=sample_ln_data$y)
+#print(paste("Accuracy_test for logistic regression is",1-missclasificerror1))
+#summary(lor)
+#Description : The logistic regression did not work because it did not converge for some reason.
+```
+
+#Using Random forest on the sample from the whole data set.
+```{r}
+library(randomForest)
+library(caret)
+library(e1071)
+set.seed(999)
+sample_ln_data<-ln_data[sample(nrow(ln_data), 15000), ]
+
+set.seed(345)
+sample2_ln_data<-ln_data[sample(nrow(ln_data), 15000), ]
+
+forest <- randomForest(y~., data = sample_ln_data, ntree = 201, mtry = 3)
+print(forest)
+
+predict_forest<-predict(forest, newdata = sample2_ln_data, type="class")
+cf3<-confusionMatrix(predict_forest,sample2_ln_data$y)
+cf3
+
+library(gmodels)
+CrossTable(sample_ln_data$y,predict_forest,
+           prop.chisq = FALSE, prop.c = FALSE, prop.r = FALSE,
+           dnn = c('charged off ', 'fully paid'))
+
+#The Random forest model worked really good when the model was trained on one sample and checked on another sample from the same data set. The accuarcy turned out to be approximately 95%.
+
+```
+#Naive Bayes Model.
+```{r}
+NB_classifier <- naiveBayes(y~.,data=sample_ln_data)
+NB_test_pred <- predict(NB_classifier, sample2_ln_data)
+
+library(gmodels)
+CrossTable(sample2_ln_data$y, NB_test_pred,
+           prop.chisq = FALSE, prop.c = FALSE, prop.r = FALSE)
+
+cf2<-confusionMatrix(NB_test_pred,sample2_ln_data$y)
+cf2
+
+#Description: #The Naive Bayes model worked fine but not as good as Random forest when the model was trained on one sample and checked on another sample from the same data set. The accuarcy turned out to be approximately 79%.
+```
+#Splitting the data set.
+```{r}
+set.seed(678)
+n<-nrow(ln_data)
+test_idx<-sample.int(n,size=round(0.25*n))
+ln_train<-ln_data[-test_idx,]
+ln_test<-ln_data[test_idx,]
+
+dim(ln_train)
+#str(ln_train)
+
+```
+# Now we are good to check different model performances using train and test data sets and calculating accuracy and ROCs.
+```{r}
+save(ln_train,file="ln_train.Rda")
+save(ln_test,file="ln_test.Rda")
+
+```
+

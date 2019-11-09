@@ -1,0 +1,334 @@
+---
+title: "Stat.652 Lending Club Loan Project_Part3"
+output:
+  word_document: default
+  html_notebook: default
+---
+
+
+```{r}
+load("ln_data.Rda")
+load("ln_train.Rda")
+load("ln_test.Rda")
+dim(ln_train)
+```
+#Null model
+```{r}
+table(ln_data$y)/nrow(ln_data)
+table(ln_train$y)/nrow(ln_train)
+table(ln_test$y)/nrow(ln_test)
+
+# Our null model gives us 82% accuracy, so we need the models that works better than this.
+```
+#Step 4 - evaluating model performance
+
+#Random Forest model
+```{r}
+set.seed(456)
+sample_ln_train<-ln_train[sample(nrow(ln_train), 11000), ]
+sample_ln_test<-ln_test[sample(nrow(ln_test),11000), ]
+
+library(randomForest)
+library(caret)
+library(e1071)
+library(ggplot2)
+library(plotly)
+
+forest <- randomForest(y~., data = sample_ln_train, ntree = 201, mtry = 3)
+print(forest)
+
+predict_forest<-predict(forest, newdata = sample_ln_test, type="class")
+cf3<-confusionMatrix(predict_forest,sample_ln_test$y)
+cf3
+
+library(gmodels)
+CrossTable(sample_ln_test$y,predict_forest,
+           prop.chisq = FALSE, prop.c = FALSE, prop.r = FALSE,
+           dnn = c('actual', 'predicted'))
+
+#Description : Random forest model gives us 95% accuracy which makes it a good model to use further in the whole data set.
+library(ROCR)
+p1 <- predict(forest, newdata=sample_ln_test, type="prob")
+pr1 <- prediction(p1[,2], sample_ln_test$y)
+
+prf1 <- performance(pr1, measure = "tpr", x.measure = "fpr")
+plot(prf1)
+
+# ggplot and PLOTLY 
+gdata <- data.frame(x=prf1@x.values[[1]],y=prf1@y.values[[1]])
+gdata_plot<-ggplot(gdata,aes(x=x,y=y))+
+  geom_line() +
+  theme_bw()
+gdata_plot
+ggplotly(gdata_plot)
+
+auc1 <- performance(pr1, measure = "auc")
+auc1 <- auc1@y.values[[1]]
+auc1
+
+# The area under the curve is 0.986.
+```
+
+```{r}
+NB_classifier <- naiveBayes(y~.,data=sample_ln_train)
+NB_test_pred <- predict(NB_classifier, sample_ln_test)
+
+
+CrossTable(sample_ln_test$y, NB_test_pred,
+           prop.chisq = FALSE, prop.c = FALSE, prop.r = FALSE)
+
+cf2<-confusionMatrix(NB_test_pred,sample_ln_test$y)
+cf2
+
+# Naive Bayes Model gives an accuracy of 80% which is not even as good as null model. Using this model does not make any sense for this data set.
+
+```
+#Using KNN
+```{r}
+#str(ln_data)
+knn_data<-ln_data[,-which(names(ln_data)%in%c("term","sub_grade","emp_length","verification_status","purpose","addr_state","debt_settlement_flag","settlement_status"))]
+#str(knn_data)
+#using normalize function 
+normalize <- function(x) {
+  return ((x - min(x)) / (max(x) - min(x)))
+}
+
+knn_data_sm<-knn_data[sample(nrow(knn_data),22000),]
+dim(knn_data_sm)
+knn_data_n <- as.data.frame(lapply(knn_data_sm[1:42], normalize))
+#str(knn_data_n)
+
+n<-nrow(knn_data_n)
+set.seed(666)
+test_id<-sample.int(n,size=round(0.5*n))
+knn_data_n_train<-knn_data_n[-test_id,]
+knn_data_n_test<-knn_data_n[test_id,]
+
+
+
+knn_data_train_labels<-knn_data_sm[-test_id,43]
+knn_data_test_labels<-knn_data_sm[test_id,43]
+
+library(class)
+knn_data_test_pred <- knn(train = knn_data_n_train, test = knn_data_n_test,
+                      cl = knn_data_train_labels, k = 21)
+
+
+CrossTable(x =knn_data_test_labels, y = knn_data_test_pred,
+           prop.chisq = FALSE)
+cf1<-confusionMatrix(knn_data_test_pred,knn_data_test_labels)
+cf1
+
+#K nearest neighbors model works okay at 90% accuracy as compared to the null model but it still improved the accuracy unlike the naive bayes model we used before.
+
+
+```
+
+#C5.0 model
+```{r}
+library(C50)
+
+#The model was not working well with the factor variables so I removed the factor variables. As it had problem computing with the blank levels of the categorical variable.
+
+c5_data<-ln_data[,-which(names(ln_data)%in%c("term","sub_grade","emp_length","verification_status","purpose","addr_state","debt_settlement_flag","settlement_status"))]
+set.seed(909)
+c5_data_sm<-c5_data[sample(nrow(c5_data),22000),]
+
+n<-nrow(c5_data_sm)
+set.seed(666)
+test_id<-sample.int(n,size=round(0.5*n))
+c5_data_sm_train<-c5_data_sm[-test_id,]
+c5_data_sm_test<-c5_data_sm[test_id,]
+
+c5_model <- C5.0(y~., data = c5_data_sm_train)
+
+pred_c50 = predict(c5_model, c5_data_sm_test, type = "class")
+cf4<-confusionMatrix(pred_c50,c5_data_sm_test$y)
+cf4
+
+#C5.0 model works the best till now forr this data set with an accuracy of approximately 99%. 
+
+#Roc curve 
+library(ROCR)
+p <- predict(c5_model, newdata=c5_data_sm_test, type="prob")
+pr <- prediction(p[,2], sample_ln_test$y)
+
+prf <- performance(pr, measure = "tpr", x.measure = "fpr")
+plot(prf)
+
+auc <- performance(pr, measure = "auc")
+auc <- auc@y.values[[1]]
+auc
+
+# The area under the curve is 0.5003.
+
+```
+
+#Step5: Improving model performance
+```{r}
+
+#We will improve the model performance of KNN model by using diffrent values of K.
+knn_data_test_pred <- knn(train = knn_data_n_train, test = knn_data_n_test, cl = knn_data_train_labels, k=1)
+CrossTable(x =knn_data_train_labels, y = knn_data_test_pred, prop.chisq=FALSE)
+cf01<-confusionMatrix(knn_data_test_pred,knn_data_test_labels)
+cf01
+
+
+knn_data_test_pred <- knn(train = knn_data_n_train, test = knn_data_n_test, cl = knn_data_train_labels, k=5)
+CrossTable(x =knn_data_train_labels, y = knn_data_test_pred, prop.chisq=FALSE)
+cf05<-confusionMatrix(knn_data_test_pred,knn_data_test_labels)
+cf05
+
+knn_data_test_pred <- knn(train = knn_data_n_train, test = knn_data_n_test, cl = knn_data_train_labels, k=11)
+CrossTable(x =knn_data_train_labels, y = knn_data_test_pred, prop.chisq=FALSE)
+cf11<-confusionMatrix(knn_data_test_pred,knn_data_test_labels)
+cf11
+
+
+knn_data_test_pred <- knn(train = knn_data_n_train, test = knn_data_n_test, cl = knn_data_train_labels, k=15)
+CrossTable(x =knn_data_train_labels, y = knn_data_test_pred, prop.chisq=FALSE)
+cf15<-confusionMatrix(knn_data_test_pred,knn_data_test_labels)
+cf15
+
+knn_data_test_pred <- knn(train = knn_data_n_train, test = knn_data_n_test, cl = knn_data_train_labels, k=19)
+CrossTable(x =knn_data_train_labels, y = knn_data_test_pred, prop.chisq=FALSE)
+cf19<-confusionMatrix(knn_data_test_pred,knn_data_test_labels)
+cf19
+
+knn_data_test_pred <- knn(train = knn_data_n_train, test = knn_data_n_test, cl = knn_data_train_labels, k=27)
+CrossTable(x =knn_data_train_labels, y = knn_data_test_pred, prop.chisq=FALSE)
+cf27<-confusionMatrix(knn_data_test_pred,knn_data_test_labels)
+cf27
+
+# Even after changing the K values , the model performance did not change much, the maximum accuracy was found to be 90.93% with value of K as 5.
+
+```
+#Naive Bayes
+```{r}
+
+#We will improve the model performance of Naive Bayes model by using diffrent values of laplace.
+NB_classifier001 <- naiveBayes(y~.,data=sample_ln_train, laplace = 1)
+NB_test_pred001 <- predict(NB_classifier001, sample_ln_test)
+CrossTable(sample_ln_test$y, NB_test_pred001,
+           prop.chisq = FALSE, prop.c = FALSE, prop.r = FALSE)
+
+cf001<-confusionMatrix(NB_test_pred001,sample_ln_test$y)
+cf001
+
+
+NB_classifier003 <- naiveBayes(y~.,data=sample_ln_train, laplace =3)
+NB_test_pred003 <- predict(NB_classifier003, sample_ln_test)
+CrossTable(sample_ln_test$y, NB_test_pred003,
+           prop.chisq = FALSE, prop.c = FALSE, prop.r = FALSE)
+
+cf003<-confusionMatrix(NB_test_pred003,sample_ln_test$y)
+cf003
+
+
+
+
+NB_classifier005 <- naiveBayes(y~.,data=sample_ln_train, laplace = 5)
+NB_test_pred005 <- predict(NB_classifier005, sample_ln_test)
+CrossTable(sample_ln_test$y, NB_test_pred005,
+           prop.chisq = FALSE, prop.c = FALSE, prop.r = FALSE)
+
+cf005<-confusionMatrix(NB_test_pred005,sample_ln_test$y)
+cf005
+
+
+
+NB_classifier007 <- naiveBayes(y~.,data=sample_ln_train, laplace = 7)
+NB_test_pred007 <- predict(NB_classifier007, sample_ln_test)
+CrossTable(sample_ln_test$y, NB_test_pred007,
+           prop.chisq = FALSE, prop.c = FALSE, prop.r = FALSE)
+
+cf007<-confusionMatrix(NB_test_pred007,sample_ln_test$y)
+cf007
+
+NB_classifier17 <- naiveBayes(y~.,data=sample_ln_train, laplace = 17)
+NB_test_pred17 <- predict(NB_classifier17, sample_ln_test)
+CrossTable(sample_ln_test$y, NB_test_pred17,
+           prop.chisq = FALSE, prop.c = FALSE, prop.r = FALSE)
+
+cf17<-confusionMatrix(NB_test_pred17,sample_ln_test$y)
+cf17
+
+# Even after tuning the parameters in the Naive bayes model by changing the values of laplace, there is not much difference in the model's accuracy. This model is still not the usable model for this data set.
+```
+#Random forest
+```{r}
+
+
+#We will improve the model performance of Random Forest model by using diffrent values of Number of variables randomly sampled as candidates at each split(mtry).
+
+forest_5 <- randomForest(y~., data = sample_ln_train, ntree = 201, mtry = 5)
+
+predict_forest_5<-predict(forest_5, newdata = sample_ln_test, type="class")
+cf_5<-confusionMatrix(predict_forest_5,sample_ln_test$y)
+cf_5
+
+CrossTable(sample_ln_test$y,predict_forest_5,
+           prop.chisq = FALSE, prop.c = FALSE, prop.r = FALSE,
+           dnn = c('actual', 'predicted'))
+
+forest_7 <- randomForest(y~., data = sample_ln_train, ntree = 201, mtry = 7)
+
+predict_forest_7<-predict(forest_7, newdata = sample_ln_test, type="class")
+cf_7<-confusionMatrix(predict_forest_7,sample_ln_test$y)
+cf_7
+
+CrossTable(sample_ln_test$y,predict_forest_7,
+           prop.chisq = FALSE, prop.c = FALSE, prop.r = FALSE,
+           dnn = c('actual', 'predicted'))
+
+
+forest_9 <- randomForest(y~., data = sample_ln_train, ntree = 201, mtry = 9)
+
+predict_forest_9<-predict(forest_9, newdata = sample_ln_test, type="class")
+cf_9<-confusionMatrix(predict_forest_9,sample_ln_test$y)
+cf_9
+
+CrossTable(sample_ln_test$y,predict_forest_9,
+           prop.chisq = FALSE, prop.c = FALSE, prop.r = FALSE,
+           dnn = c('actual', 'predicted'))
+
+forest_11<- randomForest(y~., data = sample_ln_train, ntree = 201, mtry =11)
+
+predict_forest_11<-predict(forest_11, newdata = sample_ln_test, type="class")
+cf_11<-confusionMatrix(predict_forest_11,sample_ln_test$y)
+cf_11
+
+CrossTable(sample_ln_test$y,predict_forest_11,
+           prop.chisq = FALSE, prop.c = FALSE, prop.r = FALSE,
+           dnn = c('actual', 'predicted'))
+
+
+
+forest_15<- randomForest(y~., data = sample_ln_train, ntree = 201, mtry =15)
+
+predict_forest_15<-predict(forest_15, newdata = sample_ln_test, type="class")
+cf_15<-confusionMatrix(predict_forest_15,sample_ln_test$y)
+cf_15
+
+CrossTable(sample_ln_test$y,predict_forest_15,
+           prop.chisq = FALSE, prop.c = FALSE, prop.r = FALSE,
+           dnn = c('actual', 'predicted'))
+
+#Calculating ROC and AUC.
+p2 <- predict(forest_15, newdata=sample_ln_test, type="prob")
+pr2 <- prediction(p2[,2], sample_ln_test$y)
+
+prf2 <- performance(pr2, measure = "tpr", x.measure = "fpr")
+plot(prf2)
+
+
+auc2 <- performance(pr2, measure = "auc")
+auc2 <- auc2@y.values[[1]]
+auc2
+#The area under the curve is 0.998.
+
+#The model performance drastically changed in the Random Forest model after tuning the parameter mtry. With mtry as 15 the model performance improved from 95% to 98.68% with mtry as 15.
+
+```
+# Conclusion 
+## The best ML learning model for classifying Loan Status is Random Forest model with the accuracy: 0.9868,Kappa : 0.951,Sensitivity : 0.9210,Specificity : 1.0 and AUC : 0.998.
